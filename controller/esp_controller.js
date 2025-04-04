@@ -1,93 +1,146 @@
-// ✅ จำลองข้อมูลห้อง
-let rooms = {
-  "27.03.04": [
-    {
-      room_id: "27.03.04",
-      user_name: "Somsamai Kaihumlax",
-      date: "2025-03-07",
-      start_time: "14:30",
-      end_time: "14:35",
-      checked_in: false,
-    },
-    {
-      room_id: "27.03.04",
-      user_name: "Tony Stark",
-      date: "2025-03-18",
-      start_time: "11:14",
-      end_time: "11:16",
-      checked_in: false,
-    },
-    {
-      room_id: "27.03.04",
-      user_name: "Dr.Stak Avanger",
-      date: "2025-03-08",
-      start_time: "14:42",
-      end_time: "14:45",
-      checked_in: false,
-    },
-  ],
-  "27.03.05": [
-    {
-      room_id: "27.03.05",
-      user_name: "Mr.Maithai Jaitawan",
-      date: "2025-03-11",
-      start_time: "14:28",
-      end_time: "14:30",
-      checked_in: false,
-    },
-    {
-      room_id: "27.03.05",
-      user_name: "Sman Kongking",
-      date: "2025-03-12",
-      start_time: "08:46",
-      end_time: "08:52",
-      checked_in: false,
-    },
-    {
-      room_id: "27.03.05",
-      user_name: "Sman Kongking",
-      date: "2025-03-07",
-      start_time: "13:54",
-      end_time: "13:56",
-      checked_in: false,
-    },
-  ],
-};
+const pool = require("../config/db");
+const moment = require("moment"); // ✅ ใช้ moment ในการจัดการวันที่
+// 27/3/2025
 
-// ✅ ฟังก์ชันบันทึก Check-in
-function handleCheckIn(data) {
-  if (rooms[data.room_id]) {
-    rooms[data.room_id].checked_in = true; // ✅ ใช้ `checked_in`
-    console.log(
-      `✅ Check-in received for Room ${data.room_id} at ${data.check_in_time}`
-    );
-  } else {
-    console.log(`❌ Room ${data.room_id} not found for check-in`);
-  }
-}
+exports.createRoom = async (req, res) => {
+  const { room_id, room_name, description } = req.body;
 
-// ✅ ฟังก์ชันดึงข้อมูลห้อง
-exports.getroomdata = (req, res) => {
-  const roomId = req.params.roomId;
-  if (rooms[roomId]) {
-    res.json({ success: true, data: rooms[roomId] });
-  } else {
-    res.status(404).json({ error: "Room not found" });
-  }
-};
-
-// ✅ ฟังก์ชันบันทึก Check-in ผ่าน API
-exports.logCheckin = (req, res) => {
-  const { room_id, user_name, date, check_in_time } = req.body;
-
-  if (!room_id || !user_name || !date || !check_in_time) {
+  if (!room_id || !room_name) {
     return res.status(400).json({ error: "Missing required fields!" });
   }
 
-  handleCheckIn(req.body);
-  res.json({ success: true, message: "✅ Check-in recorded successfully!" });
+  try {
+    await pool.query(
+      `INSERT INTO Room (room_id, room_name,description) VALUES (?,?,?)`,
+      [room_id, room_name, description]
+    );
+    res.json({ success: true, message: "Create Room successfully!" });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server Error!" });
+  }
 };
 
-// ✅ ส่งออกตัวแปร rooms และฟังก์ชัน handleCheckIn()
-exports.rooms = rooms;
-exports.handleCheckIn = handleCheckIn;
+// จองห้อง
+exports.createReservation = async (req, res) => {
+  const { user_id, room_id, date, start_time, end_time } = req.body;
+
+  if (!user_id || !room_id || !date || !start_time || !end_time) {
+    return res.status(400).json({ error: "Missing required fields!" });
+  }
+
+  try {
+    const unlock_key = generateRandomKey();
+
+    const [result] = await pool.query(
+      `INSERT INTO Reservation (user_id, room_id , date, start_time, end_time, unlock_key, checked_in, sent_to_esp32)
+       VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
+      [user_id, room_id, date, start_time, end_time, unlock_key]
+    );
+
+    console.log(
+      `✅ New reservation created for Room: ${room_id}, Key: ${unlock_key}`
+    );
+
+    res.json({
+      success: true,
+      message: "Reservation created successfully!",
+      unlock_key,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server Error!" });
+  }
+};
+
+exports.logCheckin = async (req, res) => {
+  const { room_id, unlock_key } = req.body;
+
+  if (!room_id || !unlock_key) {
+      return res.status(400).json({ error: 'Missing required fields!' });
+  }
+
+  try {
+      const [result] = await pool.query(
+          `UPDATE Reservation SET checked_in = 1 WHERE room_id = ? AND unlock_key = ? AND checked_in = 0`,
+          [room_id, unlock_key]
+      );
+
+      if (result.affectedRows > 0) {
+          console.log(`✅ Room ${room_id} - Successfully Checked In!`);
+          res.json({ success: true, message: 'Check-in recorded successfully!' });
+      } else {
+          res.status(404).json({ error: 'Reservation not found or already checked in.' });
+      }
+  } catch (error) {
+      console.error('❌ Error logging check-in:', error);
+      res.status(500).json({ error: 'Server error' });
+  }
+};
+
+
+// ✅ ฟังก์ชันดึงข้อมูลห้องจากฐานข้อมูล
+exports.getRoomData = async (req, res) => {
+  try {
+      const roomId = req.params.roomId;
+
+      const [roomData] = await pool.query(
+          `SELECT * FROM Room WHERE room_id = ?`,
+          [roomId]
+      );
+
+      const [reservations] = await pool.query(
+          `SELECT * FROM Reservation WHERE room_id = ?`,
+          [roomId]
+      );
+
+      if (roomData.length > 0) {
+          res.json({ success: true, data: { room: roomData[0], reservations } });
+      } else {
+          res.status(404).json({ error: 'Room not found' });
+      }
+  } catch (error) {
+      console.error('❌ Error fetching room data:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+
+exports.getAllReservation = async (req, res) => {
+  try {
+      const [reservations] = await pool.query(`SELECT * FROM Reservation`);
+
+      const formattedReservations = reservations.map((reservation) => ({
+          reservation_id: reservation.reservation_id,
+          room_id: reservation.room_id,
+          user_id: reservation.user_id,
+          date: moment(reservation.date).format('DD-MM-YYYY'),
+          start_time: reservation.start_time,
+          end_time: reservation.end_time,
+          checked_in: reservation.checked_in,
+          unlock_key: reservation.unlock_key
+      }));
+
+      res.json({ success: true, data: formattedReservations });
+
+  } catch (error) {
+      console.error('❌ Server error:', error);
+      res.status(500).json({ error: 'Server error' });
+  }
+};
+
+
+
+// ✅ ฟังก์ชันสร้าง Key แบบสุ่ม (6 ตัวอักษร: พิมพ์เล็ก, พิมพ์ใหญ่, ตัวเลข)
+function generateRandomKey() {
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let key = "";
+  for (let i = 0; i < 6; i++) {
+    key += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return key;
+}
+
+//แสดงข้อมูลการจอง
+

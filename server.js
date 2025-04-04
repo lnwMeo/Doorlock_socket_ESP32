@@ -7,11 +7,12 @@ const WebSocket = require("ws");
 const os = require("os");
 const moment = require("moment");
 const { rooms, handleCheckIn } = require("./controller/esp_controller");
-
+const pool = require("./config/db");
 const PORT = 5000;
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+let clients = new Map();
 
 app.use(express.json());
 app.use(cors());
@@ -49,86 +50,153 @@ function getCurrentRoom(roomId) {
 
   const activeRoom = rooms[roomId].find((room) => {
     let roomDate = moment(room.date, "YYYY-MM-DD");
-    let startTime = moment(`${room.date} ${room.start_time}`, "YYYY-MM-DD HH:mm");
+    let startTime = moment(
+      `${room.date} ${room.start_time}`,
+      "YYYY-MM-DD HH:mm"
+    );
     let endTime = moment(`${room.date} ${room.end_time}`, "YYYY-MM-DD HH:mm");
 
-    console.log(`🔎 Checking Room: ${room.room_id}, Date: ${room.date}, Start: ${room.start_time}, End: ${room.end_time}`);
-    console.log(`📆 Today: ${today}, Room Date: ${roomDate.format("YYYY-MM-DD")}`);
-    console.log(`🕒 Current Time: ${now.format("HH:mm")}, Start Time: ${startTime.format("HH:mm")}, End Time: ${endTime.format("HH:mm")}`);
+    console.log(
+      `🔎 Checking Room: ${room.room_id}, Date: ${room.date}, Start: ${room.start_time}, End: ${room.end_time}`
+    );
+    console.log(
+      `📆 Today: ${today}, Room Date: ${roomDate.format("YYYY-MM-DD")}`
+    );
+    console.log(
+      `🕒 Current Time: ${now.format("HH:mm")}, Start Time: ${startTime.format(
+        "HH:mm"
+      )}, End Time: ${endTime.format("HH:mm")}`
+    );
 
     return (
-      roomDate.isSame(today, "day") &&  // ✅ ตรวจสอบว่าเป็นของวันนี้
-      now.isSameOrAfter(startTime) &&   // ✅ ต้องเป็นเวลาที่เริ่มแล้ว
-      now.isBefore(endTime)             // ✅ ต้องยังไม่หมดเวลา
+      roomDate.isSame(today, "day") && // ✅ ตรวจสอบว่าเป็นของวันนี้
+      now.isSameOrAfter(startTime) && // ✅ ต้องเป็นเวลาที่เริ่มแล้ว
+      now.isBefore(endTime) // ✅ ต้องยังไม่หมดเวลา
     );
   });
 
   if (!activeRoom) {
     // console.log(`⏳ No active room for ${roomId}, waiting for start time.`);
   } else {
-    console.log(`✅ Active Room Found: ${activeRoom.room_id}, User: ${activeRoom.user_name}`);
+    console.log(
+      `✅ Active Room Found: ${activeRoom.room_id}, User: ${activeRoom.user_name}`
+    );
   }
 
   return activeRoom || null;
 }
 
-
-
 // ✅ ฟังก์ชันส่งข้อมูลห้องให้ ESP32 (แก้ไขให้เช็ควัน)
-function sendRoomData(ws, roomId) {
-  let activeRoom = getCurrentRoom(roomId);
+async function sendRoomData(ws, roomId) {
+  const now = moment();
+  const currentTime = now.format("HH:mm");
+  const currentDate = now.format("YYYY-MM-DD");
 
-  if (activeRoom) {
-    if (!activeRoom.sent_data) {  
-      console.log(`📤 Sending Room Data to ${roomId} (Date: ${activeRoom.date}, Time: ${activeRoom.start_time} - ${activeRoom.end_time})`);
-      ws.send(JSON.stringify({ type: "room_data", data: activeRoom }));
-      activeRoom.sent_data = true; // ✅ ป้องกันการส่งซ้ำ
+  try {
+    const [rows] = await pool.query(
+      `SELECT r.*,  u.username AS username
+FROM Reservation r
+JOIN Users u ON r.user_id = u.user_id
+WHERE r.room_id = ? AND r.date = ? AND r.checked_in = 0
+`,
+      [roomId, currentDate]
+    );
+
+    const activeRoom = rows[0];
+
+    if (activeRoom) {
+      const startTime = moment(
+        `${activeRoom.date} ${activeRoom.start_time}`,
+        "YYYY-MM-DD HH:mm"
+      );
+      const endTime = moment(
+        `${activeRoom.date} ${activeRoom.end_time}`,
+        "YYYY-MM-DD HH:mm"
+      );
+
+      if (now.isSameOrAfter(startTime) && now.isBefore(endTime)) {
+        const roomData = {
+          reservation_id: activeRoom.reservation_id,
+          user_id: activeRoom.user_id,
+          room_id: activeRoom.room_id,
+          date: moment(activeRoom.date).format("YYYY-MM-DD"), // ✅ แปลงวันให้แน่นอน
+          start_time: activeRoom.start_time,
+          end_time: activeRoom.end_time,
+          unlock_key: activeRoom.unlock_key,
+          checked_in: activeRoom.checked_in,
+          sent_to_esp32: activeRoom.sent_to_esp32,
+          username: activeRoom.username,
+        };
+
+        ws.send(JSON.stringify({ type: "room_data", data: roomData }));
+        console.log(`📤 Sending Room Data to ${roomId} `);
+
+        await pool.query(
+          `UPDATE Reservation SET sent_to_esp32 = 1 WHERE reservation_id = ?`,
+          [activeRoom.reservation_id]
+        );
+      } else if (now.isBefore(startTime)) {
+        console.log(
+          `⏳ Not yet time to send data. Current Time: ${currentTime}, Start Time: ${activeRoom.start_time}`
+        );
+      } else if (now.isSameOrAfter(endTime)) {
+        console.log(`⏳ The time has already expired for Room ID: ${roomId}`);
+      }
     } else {
-      console.log(`⏳ Room ${roomId} already sent. Skipping duplicate data.`);
+      console.log(`⏳ No active room found for Room ID: ${roomId}`);
     }
-  } else {
-    console.log(`⏳ No active room for ${roomId}, waiting for start time.`);
+  } catch (error) {
+    console.error("❌ Failed to send room data:", error);
   }
 }
 
-
-
-
 // ✅ ปรับปรุง checkEndTime()
-function checkEndTime() {
+async function checkEndTime() {
   const now = moment();
-  console.log("⏳ Running checkEndTime() at", now.format("YYYY-MM-DD HH:mm"));
+  console.log(
+    "⏳ Running checkEndTime() at",
+    now.format("YYYY-MM-DD HH:mm:ss")
+  );
 
-  Object.keys(rooms).forEach((roomId) => {
-    rooms[roomId] = rooms[roomId].filter((room) => {
-      let endTime = moment(`${room.date} ${room.end_time}`, "YYYY-MM-DD HH:mm");
+  try {
+    const [startingRooms] = await pool.query(
+      `SELECT r.*, u.username
+      FROM reservation r
+      JOIN users u ON r.user_id = u.user_id
+      WHERE r.date = ? AND r.start_time = ? AND r.checked_in = 0 AND r.sent_to_esp32 = 0`,
+      [now.format("YYYY-MM-DD"), now.format("HH:mm")]
+    );
 
-      if (now.isSameOrAfter(endTime)) {
-        if (!room.checked_in) {
-          console.log(`Room ${roomId} - Not Checked-in! Setting checked_in: false.`);
-          room.checked_in = false; // ✅ อัปเดตค่า checked_in เป็น false
-        }
-        console.log(`Room ${roomId} expired and removed.`);
-        return false;  // ✅ ลบออกจาก rooms
-      }
-      return true;
-    });
+    if (startingRooms.length > 0) {
+      startingRooms.forEach((room) => {
+        const ws = clients.get(room.room_id);
 
-    if (rooms[roomId].length === 0) {
-      delete rooms[roomId];
-    } else {
-      // ✅ ส่งข้อมูลใหม่ไป ESP32
-      wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN && client.roomId === roomId) {
-          console.log(`📤 Sending updated Room Data to ${roomId}`);
-          sendRoomData(client, roomId);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          console.log(
+            `📤 Sending room data to ESP32 for Room ID: ${room.room_id}`
+          );
+          // console.log(
+          //   "📤 Sending room data to ESP32:",
+          //   JSON.stringify(room, null, 2)
+          // );
+
+          ws.send(JSON.stringify({ type: "room_data", data: room }));
+
+          pool.query(
+            `UPDATE reservation SET sent_to_esp32 = 1 WHERE reservation_id = ?`,
+            [room.reservation_id]
+          );
+        } else {
+          console.log(
+            `🚫 ไม่มีการเชื่อมต่อ WebSocket สำหรับ Room ID: ${room.room_id}`
+          );
         }
       });
     }
-  });
+  } catch (error) {
+    console.error("❌ Error checking room expiration:", error);
+  }
 }
-
-
 
 // ✅ ตั้งเวลาตรวจสอบทุก 10 วินาที
 setInterval(() => {
@@ -136,38 +204,76 @@ setInterval(() => {
   checkEndTime();
 }, 10000);
 
-// ✅ WebSocket Event Handling
 wss.on("connection", (ws) => {
   console.log("🔌 New ESP32 Connected");
 
-  ws.on("message", (message) => {
+  ws.on("message", async (message) => {
     try {
       const data = JSON.parse(message);
       console.log("📩 Received JSON:", data);
 
+      // ✅ Client เข้าร่วมห้อง
       if (data.join_room) {
         ws.roomId = data.join_room;
+        clients.set(data.join_room, ws);
+        console.log(`✅ Room ${data.join_room} successfully added to clients.`);
         sendRoomData(ws, data.join_room);
       }
 
-      if (data.type === "check_in") {
-        let room = getCurrentRoom(data.room_id);
-        if (room) {
-          room.checked_in = true;
-          console.log(
-            `✅ Room ${data.room_id} - Check-in at ${data.check_in_time}`
+      // ✅ บันทึก log (ทั้ง admin และ user ใช้ร่วม)
+      if (data.type === "room_log" || data.type === "check_in") {
+        const {
+          user_id,
+          room_id,
+          role = "user",
+          action = "check_in",
+          check_in_date,
+          check_in_time
+        } = data;
+
+        // 🔍 สำหรับ user: อัปเดตสถานะ check_in ในตาราง reservation
+        if (role === "user" && action === "check_in") {
+          const [rows] = await pool.query(
+            `SELECT reservation_id FROM reservation WHERE room_id = ? AND date = ? LIMIT 1`,
+            [room_id, check_in_date]
           );
-        } else {
-          console.log(`❌ Room ${data.room_id} not found`);
+
+          if (rows.length > 0) {
+            const reservationId = rows[0].reservation_id;
+
+            await pool.query(
+              `UPDATE reservation SET checked_in = 1 WHERE reservation_id = ?`,
+              [reservationId]
+            );
+            console.log(`✅ Reservation ${reservationId} checked in.`);
+          } else {
+            console.log(`❌ Reservation not found for Room: ${room_id} on ${check_in_date}`);
+          }
         }
+
+        // ✅ บันทึก log เข้า room_logs
+        await pool.query(
+          `INSERT INTO room_logs (user_id, room_id, role, action, check_in_date, check_in_time)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [user_id, room_id, role, action, check_in_date, check_in_time]
+        );
+
+        console.log(`✅ Room log saved: ${role} ${action} by user_id=${user_id}`);
       }
+
     } catch (error) {
       console.log("❌ Error parsing JSON:", error);
     }
   });
 
-  ws.on("close", () => console.log("🔌 ESP32 Disconnected"));
+  ws.on("close", () => {
+    console.log("🔌 ESP32 Disconnected");
+    clients.forEach((value, key) => {
+      if (value === ws) clients.delete(key);
+    });
+  });
 });
+
 
 // ✅ Start Server
 server.listen(PORT, () =>
