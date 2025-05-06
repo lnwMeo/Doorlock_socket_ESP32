@@ -22,36 +22,92 @@ exports.createRoom = async (req, res) => {
 };
 
 // จองห้อง
+// ✅ createReservation.js
 exports.createReservation = async (req, res) => {
-  const { user_id, room_id, date, start_time, end_time } = req.body;
+  const data = req.body;
+  const reservations = Array.isArray(data) ? data : [data];
 
-  if (!user_id || !room_id || !date || !start_time || !end_time) {
-    return res.status(400).json({ error: "Missing required fields!" });
+  if (reservations.length === 0) {
+    return res.status(400).json({ error: "No reservation data provided." });
   }
+
+  const connection = await pool.getConnection();
+  await connection.beginTransaction();  // 🔥 Transaction
 
   try {
-    const unlock_key = generateRandomKey();
+    const results = [];
 
-    const [result] = await pool.query(
-      `INSERT INTO Reservation (user_id, room_id , date, start_time, end_time, unlock_key, checked_in, sent_to_esp32)
-       VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
-      [user_id, room_id, date, start_time, end_time, unlock_key]
-    );
+    for (const reservation of reservations) {
+      const { user_id, room_id, date, start_time, end_time } = reservation;
 
-    console.log(
-      `✅ New reservation created for Room: ${room_id}, Key: ${unlock_key}`
-    );
+      if (!user_id || !room_id || !date || !start_time || !end_time) {
+        await connection.rollback();
+        connection.release();
+        return res.status(400).json({ error: "Missing required fields!" });
+      }
 
-    res.json({
+      // ✅ ตอนเช็ค conflict -> เช็คเฉพาะห้องเดียวกันเท่านั้น
+      const [existing] = await connection.query(
+        `SELECT * FROM Reservation
+         WHERE room_id = ? AND date = ?
+         AND (
+           (start_time < ? AND end_time > ?) -- ตรงกลาง
+           OR (start_time >= ? AND start_time < ?) -- เริ่มในช่วง
+           OR (end_time > ? AND end_time <= ?) -- จบในช่วง
+         )`,
+        [room_id, date, end_time, start_time, start_time, end_time, start_time, end_time]
+      );
+
+      if (existing.length > 0) {
+        console.warn(`❌ Conflict: Room ${room_id} already reserved on ${date} ${start_time}-${end_time}`);
+        await connection.rollback();
+        connection.release();
+        return res.status(409).json({
+          error: "Reservation conflict!",
+          conflict: { room_id, date, start_time, end_time },
+        });
+      }
+
+      // ✅ ไม่ conflict -> บันทึกลงฐานข้อมูล
+      const unlock_key = generateRandomKey();
+
+      const [insertResult] = await connection.query(
+        `INSERT INTO Reservation (user_id, room_id, date, start_time, end_time, unlock_key, checked_in, sent_to_esp32)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
+        [user_id, room_id, date, start_time, end_time, unlock_key]
+      );
+
+      results.push({
+        reservation_id: insertResult.insertId,
+        user_id,
+        room_id,
+        date,
+        start_time,
+        end_time,
+        unlock_key,
+      });
+
+      console.log(`✅ Reservation created: ${room_id} on ${date} ${start_time}-${end_time}`);
+    }
+
+    await connection.commit();
+    connection.release();
+
+    return res.json({
       success: true,
-      message: "Reservation created successfully!",
-      unlock_key,
+      message: "Reservations created successfully!",
+      data: results,
     });
+
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server Error!" });
+    console.error("❌ Error creating reservations:", error);
+    await connection.rollback();
+    connection.release();
+    return res.status(500).json({ error: "Server Error!" });
   }
 };
+
+
 
 exports.logCheckin = async (req, res) => {
   const { room_id, unlock_key } = req.body;

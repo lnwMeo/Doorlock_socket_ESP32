@@ -1,0 +1,49 @@
+room (
+  room_id VARCHAR(50) PRIMARY KEY,
+  room_name VARCHAR(100),
+  description VARCHAR(255)
+)
+users (
+  user_id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('user', 'admin') NOT NULL
+)
+reservation_status (
+  status_id INT PRIMARY KEY,
+  status_name VARCHAR(50) UNIQUE NOT NULL
+)
+
+reservation (
+  reservation_id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  room_id VARCHAR(50) NOT NULL,
+  date DATE NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  unlock_key VARCHAR(20) NOT NULL,
+  sent_to_esp32 TINYINT(1) DEFAULT 0,
+  status_id INT NOT NULL,
+  approved_by INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (user_id) REFERENCES users(user_id),
+  FOREIGN KEY (room_id) REFERENCES room(room_id),
+  FOREIGN KEY (status_id) REFERENCES reservation_status(status_id),
+  FOREIGN KEY (approved_by) REFERENCES users(user_id) -- อ้างอิง admin
+)
+room_logs (
+  log_id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  room_id VARCHAR(50) NOT NULL,
+  role ENUM('user', 'admin') NOT NULL,
+  action ENUM('check_in', 'unlock', 'lock') NOT NULL,
+  check_in_date DATE NOT NULL,
+  check_in_time TIME NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (user_id) REFERENCES users(user_id),
+  FOREIGN KEY (room_id) REFERENCES room(room_id)
+)
+
