@@ -1,3 +1,87 @@
+Auth (ระบบล็อกอิน)
+-user(ผู้ใช้งาน)
+    - register
+    - login
+
+-admin(ผู้ดูแล)
+    - สร้าง user ได้
+    - รัเซ็ตรหัสผ่านให้ user
+
+
+Reservation (ระบบจอง)
+
+ที่มีอยู่แล้ว
+Auth
+POST /login -ล็อกอิน
+POST /register -สมัครใช้งาน
+
+Admin middleware
+POST /create-user -สร้างผู้ใช้งาน
+PATCH /resetpassword-user -รีเซ็ตรหัสผ่านผู้ใช้งาน
+PATCH /approve/:reservation_id -อนุมัติการจอง
+PATCH /reject/:reservation_id -ไม่อนุมัติการจอง
+POST /createroom -สร้างห้อง
+GET /getroomdata/:roomId -เลือกดูข้อมูลในห้อง
+POST /createstatusreservation -สร้างสถานะการจองห้อง (1=รอ 2=อนุมัติ 3=ไม่อนุมัติ)
+GET /allreservation -ดูข้อมูลการจองทั้งหมด
+
+User 
+POST /createreservation -จองห้อง
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 const http = require("http");
 const express = require("express");
 const morgan = require("morgan");
@@ -96,22 +180,21 @@ async function sendRoomData(ws, roomId) {
   try {
     const [rows] = await pool.query(
       `SELECT r.*, u.username AS username
-       FROM reservation r
-       JOIN users u ON r.user_id = u.user_id
-       WHERE r.room_id = ? AND r.date = ? AND r.status_id = 2
-         AND r.sent_to_esp32 = 0
-         AND NOT EXISTS (
-           SELECT 1 FROM room_logs l
-           WHERE l.room_id = r.room_id AND l.user_id = r.user_id 
-             AND l.action = 'check_in' AND l.check_in_date = r.date
-         )
-       ORDER BY r.start_time ASC
-       LIMIT 1`,
+   FROM reservation r
+   JOIN users u ON r.user_id = u.user_id
+   WHERE r.room_id = ? 
+     AND r.date = ?  
+     AND r.status_id = 2
+     AND r.sent_to_esp32 = 0
+     AND NOT EXISTS (
+       SELECT 1 FROM room_logs l
+       WHERE l.room_id = r.room_id AND l.user_id = r.user_id 
+         AND l.action = 'check_in' AND l.check_in_date = DATE(r.date)
+     )
+   ORDER BY r.start_time ASC
+   LIMIT 1`,
       [roomId, currentDate]
     );
-    
-    
-    
 
     const activeRoom = rows[0];
 
@@ -142,7 +225,7 @@ async function sendRoomData(ws, roomId) {
         console.log(`📤 Sending Room Data to ${roomId} `);
 
         await pool.query(
-          `UPDATE Reservation SET sent_to_esp32 = 1 WHERE reservation_id = ?`,
+          `UPDATE reservation SET sent_to_esp32 = 1 WHERE reservation_id = ?`,
           [activeRoom.reservation_id]
         );
       } else if (now.isBefore(startTime)) {
@@ -182,7 +265,6 @@ async function checkEndTime() {
          )`,
       [now.format("YYYY-MM-DD"), now.format("HH:mm")]
     );
-    
 
     if (startingRooms.length > 0) {
       startingRooms.forEach((room) => {
@@ -223,7 +305,7 @@ setInterval(() => {
 
 wss.on("connection", (ws) => {
   console.log("🔌 New ESP32 Connected");
-
+  //
   ws.on("message", async (message) => {
     try {
       const data = JSON.parse(message);
@@ -248,37 +330,40 @@ wss.on("connection", (ws) => {
           check_in_time,
         } = data;
 
-        // 🔍 สำหรับ user: อัปเดตสถานะ check_in ในตาราง reservation
+        let reservationId = null;
+
         if (role === "user" && action === "check_in") {
           const [rows] = await pool.query(
-            `SELECT reservation_id FROM reservation WHERE room_id = ? AND date = ? LIMIT 1`,
-            [room_id, check_in_date]
+            `SELECT reservation_id FROM reservation WHERE room_id = ? AND date = ? AND user_id = ? LIMIT 1`,
+            [room_id, check_in_date, user_id]
           );
 
-          // if (rows.length > 0) {
-          //   const reservationId = rows[0].reservation_id;
-
-          //   await pool.query(
-          //     `UPDATE reservation SET checked_in = 1 WHERE reservation_id = ?`,
-          //     [reservationId]
-          //   );
-          //   console.log(`✅ Reservation ${reservationId} checked in.`);
-          // } else {
-          //   console.log(
-          //     `❌ Reservation not found for Room: ${room_id} on ${check_in_date}`
-          //   );
-          // }
+          if (rows.length > 0) {
+            reservationId = rows[0].reservation_id;
+            console.log(`✅ Found reservation_id=${reservationId} for logging`);
+          } else {
+            console.warn("❌ No matching reservation found for check-in log");
+          }
         }
 
-        // ✅ บันทึก log เข้า room_logs
+        // ✅ บันทึก log เข้า room_logs (ใช้ได้ทั้ง user และ admin)
         await pool.query(
-          `INSERT INTO room_logs (user_id, room_id, role, action, check_in_date, check_in_time)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [user_id, room_id, role, action, check_in_date, check_in_time]
+          `INSERT INTO room_logs (reservation_id, user_id, room_id, role, action, check_in_date, check_in_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            reservationId,
+            user_id,
+            room_id,
+            role,
+            action,
+            check_in_date,
+            check_in_time,
+          ]
         );
 
         console.log(
-          `✅ Room log saved: ${role} ${action} by user_id=${user_id}`
+          `✅ Room log saved: ${role} ${action} by user_id=${user_id}` +
+            (reservationId ? ` (reservation_id=${reservationId})` : "")
         );
       }
     } catch (error) {
