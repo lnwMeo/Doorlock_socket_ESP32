@@ -12,22 +12,54 @@ Reservation (ระบบจอง)
 
 ที่มีอยู่แล้ว
 Auth
-POST /login -ล็อกอิน
-POST /register -สมัครใช้งาน
+✅POST /login -ล็อกอิน
+✅POST /register -สมัครใช้งาน
 
 Admin middleware
-POST /create-user -สร้างผู้ใช้งาน
-PATCH /resetpassword-user -รีเซ็ตรหัสผ่านผู้ใช้งาน
-PATCH /approve/:reservation_id -อนุมัติการจอง
-PATCH /reject/:reservation_id -ไม่อนุมัติการจอง
-POST /createroom -สร้างห้อง
-GET /getroomdata/:roomId -เลือกดูข้อมูลในห้อง
-POST /createstatusreservation -สร้างสถานะการจองห้อง (1=รอ 2=อนุมัติ 3=ไม่อนุมัติ)
-GET /allreservation -ดูข้อมูลการจองทั้งหมด
+✅POST /create-user -สร้างผู้ใช้งาน
+✅PATCH /resetpassword-user -รีเซ็ตรหัสผ่านผู้ใช้งาน
+✅PATCH /approve/:reservation_id -อนุมัติการจอง ส่ง เมล
+✅PATCH /reject/:reservation_id -ไม่อนุมัติการจอง ส่ง เมล
+✅POST /createroom -สร้างห้อง
+✅GET /getroomdata/:roomId -เลือกดูข้อมูลในห้อง
+✅POST /createstatusreservation -สร้างสถานะการจองห้อง (1=รอ 2=อนุมัติ 3=ไม่อนุมัติ)
+✅GET /allreservation -ดูข้อมูลการจองทั้งหมด
+✅GET /generateadminqrcode -เจน qrcode แอดมิน
+Admin Dashbord
+✅GET /dashbord-status
+-คำขอรอการอนุมัติ(จำนวน)
+-อนุมัติแล้ว(จำนวน)
+-ห้องทั้งหมด(จำนวน)
+-จำนวน User ทั้งหมด(จำนวน)
+-จำนวน Admin ทั้งหมด(จำนวน)
+✅GET /getroomusagestats -ยอดการใช้งานแต่ละห้องอ้างอิงจากการเช็คอิน(ฟิวเตอร์ แยกเดือน / แยกปี)
+✅GET /getuserusagesummary -การจองและการใช้งานห้องของ user (ฟิวเตอร์ แยกเดือน / แยกปี / ผู้ใช้)
+✅GET /getrecentlogs -Logmini(แบบเรียลไทล์)
 
 User 
-POST /createreservation -จองห้อง
+✅POST /createreservation -จองห้อง จองสำเร็จส่งแจ้งเตือนไปในกลุ่ม Telegarm
+✅GET /getmyreservations -แสดงรายการการจอง
 
+
+
+เพิ่ม API
+-แสดงข้อมูลหน้า Dashbord Admin
+ ⚠️ห้องที่ใช้งาน(แบบเรียลไทล์)
+
+
+-Admin
+ ⚠️แก้ไขลบข้อมูลและให้สิทธิ์ User
+ ⚠️สร้างบัญชี Admin ได้เลย
+ ⚠️แก้ไขและลบ Admin ได้ และสรา้ง qrcode ได้
+
+ 
+
+ -User
+
+ 
+
+
+ 
 
 
 

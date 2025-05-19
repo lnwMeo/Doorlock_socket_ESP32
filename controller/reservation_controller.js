@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { sendTelegramMessage } = require("../utils/sendtotelegram");
 
 // จองห้อง
 // ✅ createReservation.js
@@ -95,10 +96,25 @@ exports.createReservation = async (req, res) => {
       console.log(
         `✅ Reservation created: ${room_id} on ${date} ${start_time}-${end_time}`
       );
+      
+      const [[userRow]] = await connection.query(
+        "SELECT username FROM users WHERE user_id = ?",
+        [user_id]
+      );
+      const username = userRow?.username || "ไม่ทราบชื่อ";
+      
+      const telegramText = `
+      📢 <b>คำขอจองห้องใหม่</b>
+      👤 <b>ชื่อผู้ใช้:</b> ${username}
+      🏫 <b>ห้อง:</b> ${room_id}
+      📅 <b>วันที่:</b> ${date}
+      🕒 <b>เวลา:</b> ${start_time} - ${end_time}
+      📝 <b>กิจกรรม:</b> ${description}
+      📌 <i>กรุณาเข้าสู่ระบบเพื่อตรวจสอบและอนุมัติ</i>
+      `.trim();
+      
+      await sendTelegramMessage(telegramText);
     }
-
-    await connection.commit();
-    connection.release();
 
     return res.json({
       success: true,
