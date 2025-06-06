@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 
 exports.sendApprovalEmail = async (to, subject, html,attachments = []) => {
   await transporter.sendMail({
-    from: `"DoorLock System" <${process.env.SMTP_USER}>`,
+    from: `"COS SmartLab" <${process.env.SMTP_USER}>`,
     to,
     subject,
     html,
