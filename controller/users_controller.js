@@ -4,6 +4,7 @@ const pool = require("../config/db");
 const moment = require("moment");
 const QRCode = require("qrcode");
 const Joi = require("joi");
+const { sendTelegramMessage } = require("../utils/sendtotelegram");
 
 // Schema สำหรับ validate params
 const idParamSchema = Joi.object({
@@ -102,3 +103,76 @@ exports.generateQRCodeForReservation = async (req, res) => {
     return res.status(500).json({ error: "Server error" });
   }
 };
+
+// controller/reservation.controller.js (หรือไฟล์ที่คุณเก็บ controller เอาไว้)
+
+exports.cancelReservation = async (req, res) => {
+  const reservationId = req.params.reservation_id;
+  const userId = req.user.user_id;
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1) ตรวจว่าเป็น pending และเป็นของ user จริง
+    const [rows] = await connection.query(
+      `SELECT r.*, u.username
+       FROM reservation r
+       JOIN users u ON r.user_id = u.user_id
+       WHERE r.reservation_id = ? AND r.user_id = ? AND r.status_id = 1`,
+      [reservationId, userId]
+    );
+    const reservation = rows[0];
+    if (!reservation) {
+      throw { status: 404, message: "ไม่พบการจอง หรือไม่สามารถยกเลิกได้" };
+    }
+
+    // 2) สร้างสถานะ cancelled_by_user ถ้ายังไม่มี
+    await connection.query(
+      `INSERT IGNORE INTO reservation_status (status_id, status_name)
+       VALUES (4, 'cancelled_by_user')`
+    );
+
+    // 3) อัปเดตสถานะใน reservation
+    await connection.query(
+      `UPDATE reservation
+       SET status_id = 4,
+       updated_by  = ?
+       WHERE reservation_id = ?`,
+      [userId,  reservationId]
+    );
+
+    await connection.commit();
+
+    // 4) ตอบ client ทันที
+    res.json({
+      success: true,
+      message: "ยกเลิกรายการจองเรียบร้อยแล้ว",
+    });
+
+    // 5) ส่ง Telegram แจ้งแอดมิน (fire-and-forget)
+    const text = `
+        "❌ <b>ยกเลิการจองห้อง</b>",
+📌 ผู้ใช้ ${reservation.username}  ยกเลิกรายการจอง
+🏠 ห้อง: ${reservation.room_id}
+📅 วันที่: ${reservation.date}
+⏰ เวลา: ${reservation.start_time} - ${reservation.end_time}
+
+    `.trim();
+    sendTelegramMessage(text).catch((e) =>
+      console.warn("⚠️ Telegram failed:", e)
+    );
+  } catch (err) {
+    console.error("❌ cancelReservation error:", err);
+    if (connection) await connection.rollback();
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return res.status(500).json({ error: "Server error" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+

@@ -103,8 +103,8 @@ exports.createAdmin = async (req, res) => {
   }
 };
 
-exports.editAdmin = async (req,res)=>{
-    try {
+exports.editAdmin = async (req, res) => {
+  try {
     // ดึง user_id จาก URL params
     const user_id = req.params.user_id;
 
@@ -148,7 +148,7 @@ exports.editAdmin = async (req,res)=>{
     console.error("editUser error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
+};
 exports.resetAdminPassword = async (req, res) => {
   try {
     const { error, value } = resetPasswordSchema.validate(req.body);
@@ -173,7 +173,7 @@ exports.resetAdminPassword = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-exports.deleteAdmin = async (req,res)=>{
+exports.deleteAdmin = async (req, res) => {
   // 1) ตรวจสอบสิทธิ์เฉพาะ admin
   if (req.user.role !== "admin") {
     return res.status(403).json({ error: "Access denied. Admin only." });
@@ -237,14 +237,13 @@ exports.deleteAdmin = async (req,res)=>{
     }
     return res.status(500).json({ error: "Internal server error" });
   }
-}
-
+};
 // --- QR Code Generation ---
 exports.generateAdminQRCode = async (req, res) => {
   try {
     // แทนที่จะอ่านจาก req.user.user_id เราอ่านจาก URL params เลย
     const adminIdParam = req.params.admin_id;
-    
+
     // ตรวจสอบว่า adminIdParam เป็นจำนวนเต็มหรือไม่
     const admin_id = parseInt(adminIdParam, 10);
     if (isNaN(admin_id)) {
@@ -266,8 +265,6 @@ exports.generateAdminQRCode = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
-
 // --- User Management ---
 exports.listUser = async (req, res) => {
   try {
@@ -312,7 +309,6 @@ exports.createUser = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 exports.resetUserPassword = async (req, res) => {
   try {
     const { error, value } = resetPasswordSchema.validate(req.body);
@@ -337,7 +333,6 @@ exports.resetUserPassword = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 exports.editUser = async (req, res) => {
   try {
     // ดึง user_id จาก URL params
@@ -384,7 +379,6 @@ exports.editUser = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 exports.disabledUser = async (req, res) => {
   if (req.user.role !== "admin") {
     return res.status(403).json({ error: "Access denied. Admin only." });
@@ -419,7 +413,6 @@ exports.enabledUser = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 exports.deleteUser = async (req, res) => {
   // 1) ตรวจสอบสิทธิ์เฉพาะ admin
   if (req.user.role !== "admin") {
@@ -485,7 +478,6 @@ exports.deleteUser = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 // --- Room Management ---
 exports.createRoom = async (req, res) => {
   try {
@@ -493,10 +485,9 @@ exports.createRoom = async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
 
     const { room_id, room_name, description } = value;
-    const [exists] = await pool.query(
-      "SELECT 1 FROM room WHERE room_id = ?",
-      [room_id]
-    );
+    const [exists] = await pool.query("SELECT 1 FROM room WHERE room_id = ?", [
+      room_id,
+    ]);
     if (exists.length) {
       return res.status(409).json({ error: "Room ID already exists" });
     }
@@ -511,8 +502,8 @@ exports.createRoom = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-exports.listRoom = async (req,res) =>{
- try {
+exports.listRoom = async (req, res) => {
+  try {
     const [rooms] = await pool.query(
       "SELECT room_id, room_name, description, is_disabled FROM room ORDER BY room_id"
     );
@@ -521,8 +512,8 @@ exports.listRoom = async (req,res) =>{
     console.error("listRoom error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
-exports.editRoom = async (req,res) =>{
+};
+exports.editRoom = async (req, res) => {
   try {
     const roomIdParam = req.params.room_id;
     // แปลงให้เป็น string/ตรวจสอบว่าไม่ว่าง
@@ -557,8 +548,8 @@ exports.editRoom = async (req,res) =>{
     console.error("editRoom error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
-exports.deleteRoom = async (req,res) =>{
+};
+exports.deleteRoom = async (req, res) => {
   const roomIdParam = req.params.room_id;
 
   // ตรวจสอบ param ว่าไม่ว่างและเป็น string
@@ -621,9 +612,9 @@ exports.deleteRoom = async (req,res) =>{
     // ถ้าเป็นข้อผิดพลาดที่ไม่ใช่ foreign key หรือตรวจไม่เจอ ก็ขึ้น 500
     return res.status(500).json({ error: "Internal server error" });
   }
-}
-exports.disabledRoom = async (req,res) =>{
-   try {
+};
+exports.disabledRoom = async (req, res) => {
+  try {
     const roomIdParam = req.params.room_id;
     if (!roomIdParam || typeof roomIdParam !== "string") {
       return res.status(400).json({ error: "Invalid room_id parameter" });
@@ -639,19 +630,18 @@ exports.disabledRoom = async (req,res) =>{
     }
 
     // ตั้ง is_disabled = TRUE เพื่อปิดการจองห้อง
-    await pool.query(
-      "UPDATE room SET is_disabled = TRUE WHERE room_id = ?",
-      [roomIdParam]
-    );
+    await pool.query("UPDATE room SET is_disabled = TRUE WHERE room_id = ?", [
+      roomIdParam,
+    ]);
 
     return res.json({ message: "Room has been disabled for booking" });
   } catch (err) {
     console.error("disabledRoom error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
-exports.enabledRoom = async (req,res) =>{
-   try {
+};
+exports.enabledRoom = async (req, res) => {
+  try {
     const roomIdParam = req.params.room_id;
     if (!roomIdParam || typeof roomIdParam !== "string") {
       return res.status(400).json({ error: "Invalid room_id parameter" });
@@ -667,24 +657,16 @@ exports.enabledRoom = async (req,res) =>{
     }
 
     // ตั้ง is_disabled = FALSE เพื่อเปิดการจองห้อง
-    await pool.query(
-      "UPDATE room SET is_disabled = FALSE WHERE room_id = ?",
-      [roomIdParam]
-    );
+    await pool.query("UPDATE room SET is_disabled = FALSE WHERE room_id = ?", [
+      roomIdParam,
+    ]);
 
     return res.json({ message: "Room has been enabled for booking" });
   } catch (err) {
     console.error("enabledRoom error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-}
-
-
-
-
-
-
-
+};
 
 // --- Reservation Queries ---
 exports.getPendingReservations = async (req, res) => {
@@ -756,8 +738,8 @@ exports.approveReservation = async (req, res) => {
 
     // 1) อัปเดตสถานะก่อน
     await pool.query(
-      "UPDATE reservation SET status_id = 2, approved_by = ? WHERE reservation_id = ?",
-      [admin_id, reservation_id]
+      "UPDATE reservation SET status_id = 2, approved_by = ?  ,updated_by  = ? WHERE reservation_id = ?",
+      [admin_id, admin_id, reservation_id]
     );
 
     // 2) เตรียมข้อมูล QR และ HTML
@@ -800,8 +782,8 @@ exports.rejectReservation = async (req, res) => {
       return res.status(404).json({ error: "Reservation not found" });
 
     await pool.query(
-      "UPDATE reservation SET status_id = 3, approved_by = ? WHERE reservation_id = ?",
-      [admin_id, reservation_id]
+      "UPDATE reservation SET status_id = 3, approved_by = ?,updated_by  = ? WHERE reservation_id = ?",
+      [admin_id,admin_id, reservation_id]
     );
     const html = generateRejectionEmailHtml(reservation);
     if (reservation.email) {
@@ -903,8 +885,6 @@ exports.createstatusReservation = async (req, res) => {
   }
 };
 
-
-
 // --- Approved Reservations by Room ---
 exports.getApprovedReservationsByRoom = async (req, res) => {
   try {
@@ -941,3 +921,90 @@ exports.getAllRoomsAdmin = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
+// controllers/adminReservationController.js
+
+exports.cancelReservationByAdmin = async (req, res) => {
+  const { reservation_id } = req.params;
+  const admin_id = req.user.user_id;
+
+  try {
+    const reservation = await fetchReservationDetails(reservation_id);
+    if (!reservation || reservation.status_id !== 2) {
+      return res
+        .status(404)
+        .json({ error: "ไม่พบการจอง หรือยังไม่อยู่ในสถานะอนุมัติ" });
+    }
+
+    const now = moment();
+    const start = moment(
+      `${reservation.date} ${reservation.start_time}`,
+      "YYYY-MM-DD HH:mm:ss"
+    );
+    if (now.isSameOrAfter(start)) {
+      return res
+        .status(400)
+        .json({ error: "ไม่สามารถยกเลิกหลังจากถึงเวลาใช้งานแล้ว" });
+    }
+
+    // อัปเดตแค่ status_id เป็น 5 (cancelled_by_admin) และ updated_at
+  await pool.query(
+  `UPDATE reservation
+     SET status_id  = 5,           
+         updated_by = ?,           
+         updated_at = NOW()
+   WHERE reservation_id = ?`,    
+  [admin_id, reservation_id]
+);
+
+    // ส่งเมลแจ้งเตือน
+    const html = generateCancelEmailHtml(reservation);
+    if (reservation.email) {
+      await sendApprovalEmail(
+        reservation.email,
+        "แจ้งยกเลิกการจองห้องโดยแอดมิน",
+        html
+      );
+    }
+
+    return res.json({ message: "ยกเลิกการจองโดยแอดมินเรียบร้อย" });
+  } catch (err) {
+    console.error("cancelReservationByAdmin error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+function generateCancelEmailHtml(reservation) {
+  const date = moment(reservation.date).format("DD-MM-YYYY");
+  const inner = `
+    <tr>
+      <td style="text-align: center;">
+        <h2 style="color: #dc3545;">ระบบจองห้อง COS SmartLab</h2>
+        <p style="color: #555;">แจ้งเตือนการยกเลิกการจองห้อง</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><strong>เรียนคุณ</strong> ${reservation.username},</p>
+        <p style="color: #dc3545;"><strong>การจองของคุณถูกยกเลิกโดยผู้ดูแลระบบ ❌</strong></p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background-color: #f8d7da; padding: 15px; border-radius: 6px;">
+        <ul style="font-size: 16px; color: #721c24;">
+          <li><strong>ห้อง:</strong> ${reservation.room_name}</li>
+          <li><strong>กิจกรรม:</strong> ${reservation.description}</li>
+          <li><strong>วันที่:</strong> ${date}</li>
+          <li><strong>เวลา:</strong> ${reservation.start_time} - ${reservation.end_time}</li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>หากมีข้อสงสัย กรุณาติดต่อผู้ดูแลระบบ</p>
+        <p style="font-size: 13px; color: #888;">NRRU COS SmartLab</p>
+      </td>
+    </tr>`;
+
+  return wrapEmailContent(inner);
+}

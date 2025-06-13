@@ -35,6 +35,7 @@ const {
   generateAdminQRCode, // สร้าง QR Code สำหรับ Admin
   getApprovedReservationsByRoom, // รายการห้องที่ใช้งาน ฟิวเตอร์โดย room_id
   getAllRoomsAdmin, // แสดง room_id ทั้งหมด
+  cancelReservationByAdmin,
 } = require("../controller/admins_controller");
 
 // ✅ Controller: แดชบอร์ด
@@ -45,6 +46,8 @@ const {
   getRecentLogs, // Log ล่าสุด
   getUserName, //แสดงชื่อผู้ใช้ทั้งหมด
   gettotalSummary,
+  getroomLogs,
+  activeCountRoom,
 } = require("../controller/dashbord_controller");
 
 // ✅ Controller: บันทึก Log และดึงข้อมูลห้อง
@@ -54,6 +57,7 @@ const { logCheckin, getRoomData } = require("../controller/logs_controller");
 const {
   getMyReservations,
   generateQRCodeForReservation,
+  cancelReservation,
 } = require("../controller/users_controller");
 const {
   createReservation,
@@ -150,6 +154,13 @@ router.post(
 router.get("/allreservation", verifyToken, requireAdmin, getAllReservation);
 router.get("/getallroomsadmin", verifyToken, requireAdmin, getAllRoomsAdmin);
 
+router.patch(
+  "/cancelReservationByAdmin/:reservation_id",
+  verifyToken,
+  requireAdmin,
+  cancelReservationByAdmin
+);
+
 // =================== 📊 Dashboard Routes ===================
 // ดึงสถิติการจอง/ใช้งาน
 router.get("/dashbord-status", verifyToken, requireAdmin, getDashboardStats);
@@ -165,6 +176,9 @@ router.get(
 );
 // รายงานการใช้งานของผู้ใช้
 router.get("/gettotalsummary", verifyToken, requireAdmin, gettotalSummary);
+router.get("/getroomLogs", verifyToken, requireAdmin, getroomLogs);
+router.get("/activeCountRoom", verifyToken, requireAdmin, activeCountRoom);
+
 // สร้าง QR Code สำหรับ Admin
 router.get(
   "/generateadminqrcode/:admin_id",
@@ -185,6 +199,12 @@ router.get(
   "/generateqrcode/:reservation_id",
   verifyToken,
   generateQRCodeForReservation
+);
+
+router.patch(
+  "/cancelReservation/:reservation_id",
+  verifyToken,
+  cancelReservation
 );
 
 // =================== 📋 Log Routes ===================

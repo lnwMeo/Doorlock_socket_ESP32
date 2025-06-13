@@ -68,8 +68,8 @@ exports.getRoomUsageStats = async (req, res) => {
       LEFT JOIN room_logs l 
         ON r.room_id = l.room_id 
        AND l.action = 'check_in'
-       AND ( ? IS NULL OR YEAR(l.check_in_date) = ? )
-       AND ( ? IS NULL OR MONTH(l.check_in_date) = ? )
+       AND ( ? IS NULL OR YEAR(l.check_date) = ? )
+       AND ( ? IS NULL OR MONTH(l.check_date) = ? )
       GROUP BY 
         r.room_id, r.room_name
       ORDER BY 
@@ -184,83 +184,135 @@ exports.gettotalSummary = async (req, res) => {
   const conditions = [];
   const values = [];
 
-  // ถ้ามีกรองเดือน
   if (month) {
-    conditions.push('MONTH(r.date) = ?');
+    conditions.push("MONTH(r.date) = ?");
     values.push(month);
   }
-  // ถ้ามีกรองปี
   if (year) {
-    conditions.push('YEAR(r.date) = ?');
+    conditions.push("YEAR(r.date) = ?");
     values.push(year);
   }
-  const whereClause = conditions.length
-    ? `WHERE ${conditions.join(' AND ')}`
-    : '';
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   try {
     const [rows] = await pool.query(
       `
       SELECT
         COUNT(r.reservation_id) AS total_reservations,
-        -- จำนวนเช็กอิน
+
+        -- เช็กอินแล้ว
         SUM(
           CASE WHEN EXISTS (
-            SELECT 1
-            FROM room_logs l
+            SELECT 1 FROM room_logs l
             WHERE l.reservation_id = r.reservation_id
               AND l.action = 'check_in'
           ) THEN 1 ELSE 0 END
         ) AS attended,
-        -- จำนวนที่ไม่เช็กอิน
+
+        -- ไม่เช็กอิน
         SUM(
           CASE WHEN NOT EXISTS (
-            SELECT 1
-            FROM room_logs l
+            SELECT 1 FROM room_logs l
             WHERE l.reservation_id = r.reservation_id
               AND l.action = 'check_in'
           ) THEN 1 ELSE 0 END
         ) AS missed,
-        -- เปอร์เซ็นต์เช็กอิน
+
         ROUND(
           SUM(
             CASE WHEN EXISTS (
-              SELECT 1
-              FROM room_logs l
+              SELECT 1 FROM room_logs l
               WHERE l.reservation_id = r.reservation_id
                 AND l.action = 'check_in'
             ) THEN 1 ELSE 0 END
-          ) / COUNT(r.reservation_id) * 100
-        , 2) AS attended_percent,
-        -- เปอร์เซ็นต์ไม่เช็กอิน
+          ) / COUNT(r.reservation_id) * 100, 2
+        ) AS attended_percent,
+
         ROUND(
           SUM(
             CASE WHEN NOT EXISTS (
-              SELECT 1
-              FROM room_logs l
+              SELECT 1 FROM room_logs l
               WHERE l.reservation_id = r.reservation_id
                 AND l.action = 'check_in'
             ) THEN 1 ELSE 0 END
-          ) / COUNT(r.reservation_id) * 100
-        , 2) AS missed_percent
+          ) / COUNT(r.reservation_id) * 100, 2
+        ) AS missed_percent,
+
+        -- นับตาม status_id
+        SUM(CASE WHEN r.status_id = 2 THEN 1 ELSE 0 END) AS status_2_count,
+        SUM(CASE WHEN r.status_id = 3 THEN 1 ELSE 0 END) AS status_3_count,
+        SUM(CASE WHEN r.status_id = 4 THEN 1 ELSE 0 END) AS status_4_count,
+        SUM(CASE WHEN r.status_id = 5 THEN 1 ELSE 0 END) AS status_5_count
+
       FROM reservation r
       ${whereClause}
       `,
       values
     );
 
-    // rows[0] จะเป็นวัตถุสรุปเดียว
     const summary = rows[0] || {
-      total_reservations: 0,
-      attended: 0,
-      missed: 0,
-      attended_percent: 0,
-      missed_percent: 0,
+      total_reservations:    0,
+      attended:              0,
+      missed:                0,
+      attended_percent:      0,
+      missed_percent:        0,
+      status_2_count:        0,
+      status_3_count:        0,
+      status_4_count:        0,
+      status_5_count:        0,
     };
 
     return res.json({ success: true, data: summary });
   } catch (err) {
-    console.error('❌ Error fetching usage summary:', err);
-    return res.status(500).json({ error: 'Server error' });
+    console.error("❌ Error fetching usage summary:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 };
+
+exports.getroomLogs = async (req,res)=>{
+   try {
+    const [rows] = await pool.query(
+      `SELECT 
+         rl.log_id,
+         rl.reservation_id,
+         rl.user_id,
+         u.username,            
+         rl.room_id,
+         rl.role,
+         rl.action,
+         rl.check_date,
+         rl.check_time,
+         rl.created_at
+       FROM room_logs rl
+       JOIN users u ON rl.user_id = u.user_id
+       ORDER BY rl.created_at DESC`
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("❌ Error fetching room_logs:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
+
+exports.activeCountRoom = async (req,res) =>{
+   try {
+    const [rows] = await pool.query(
+      `
+      SELECT COUNT(DISTINCT r.room_id) AS active_count
+      FROM room_logs l
+      JOIN reservation r ON l.reservation_id = r.reservation_id
+      WHERE l.action = 'check_in'
+        AND r.status_id = 2
+        AND CONCAT(r.date, ' ', r.end_time) >= NOW()
+      `
+    );
+
+    // rows[0].active_count จะเก็บจำนวนห้องที่กำลังใช้งาน
+    const count = rows[0]?.active_count || 0;
+    return res.json({ success: true, data: { active_rooms: count } });
+  } catch (err) {
+    console.error("❌ Error fetching active rooms count:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+}
